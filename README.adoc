@@ -1,0 +1,122 @@
+= dunaj.serial
+
+Dunaj resource for serial communication
+
+JSSC is used for underlying serial communication.
+Plan is to replace JSSC with custom implementation, but with support
+only for linux.
+
+== Using with emulator
+
+Setting up emulator in linux that supports control signals:
+
+. Download http://sourceforge.net/projects/tty0tty/files/tty0tty-1.2.tgz/download[tty0tty]
+. Unpack, go into `module` directory
+. Execute `make` (kernel-headers or kernel source is required for build)
+. Run `sudo sudo insmod tty0tty.ko`
+. You can now have tty pairs at /dev/tnt0-/dev/tnt1 and so on
+. Set chmod on tntX so that you can use them from non-root users
+
+== Examples
+
+[source,clojure,linesnum]
+--
+(ns foo.bar
+  (:api dunaj)
+  (:require [dunaj.concurrent.thread :refer [sleep]]
+            [dunaj.concurrent.port :refer [reduce!]]
+            [dunaj.resource :refer [status control! controller]]))
+
+;; Acking commands
+(with-scope
+  (let [in (acquire! (resource "serial:/dev/tnt0"))
+        out (acquire! (resource "serial:/dev/tnt1"))]
+
+    (thread
+     (io!
+      (dored [command (lines (parse utf8 (read! in)))]
+        (println! "received:" command)
+        (write! in (print utf8 "OK\n"))))
+     (println! "thread in done"))
+
+    (thread
+     (io!
+      (dored [x (lines (parse utf8 (read! out)))]
+        (println! "got back:" x)))
+     (println! "thread out done"))
+
+    (write! out (print utf8 "Main screen turn on\n"))
+    (sleep 500)
+    (write! out (print utf8 "launch missiles\n"))
+    (sleep 1000)))
+;; received: Main screen turn on
+;; got back: OK
+;; received: launch missiles
+;; got back: OK
+;; thread out done
+;; thread in done
+;;=> nil
+
+;; Status and Control signals
+(with-scope
+  (let [in (acquire! (resource "serial:/dev/tnt0"))
+        out (acquire! (resource "serial:/dev/tnt1"))
+        s (status in)
+        c (chan)
+        rf #(println! "port status updated, is now" (nth %2 2))]
+    (println! "initial status is" @s)
+    (tap! s c)
+    (reduce! rf nil c)
+    (control! out :rts false :dtr false)
+    (sleep 100)
+    @(controller out)))
+;; initial status is {:cts true :dsr true :ring false :dcd true}
+;; port status updated, is now {:cts false :dsr false :ring false :dcd false}
+;; port status updated, is now {:cts false :dsr false :ring false :dcd false}
+;; port status updated, is now {:cts false :dsr false :ring false :dcd false}
+;;=> {:dtr false, :rts false}
+
+;; Non-blocking IO
+(with-scope
+  (let [in (acquire! (resource "serial:/dev/tnt0"
+                               :non-blocking? true))
+        out (acquire! (resource "serial:/dev/tnt1"))]
+    (thread
+     (io! (let [x (parse utf8 (read! in))
+                ir (atom [])]
+            (loop [r (reduce #(do (alter! ir conj %2) (inc %)) 0 x)]
+              (if (postponed? r)
+                (do (println! "got postponed" @r (str @ir))
+                    (reset! ir [])
+                    (sleep 500)
+                    (recur (unsafe-advance! r)))
+                (println! "got final" r @ir))))))
+    (write! out (print utf8 "lorem ipsum"))
+    (sleep 1000)
+    (write! out (print utf8 "dolor sit"))
+    (sleep 700)
+    (write! out (print utf8 "amet"))
+    (sleep 1600)
+    (write! out (print utf8 "howgh"))
+    (sleep 600)))
+;; got postponed 11 lorem ipsum
+;; got postponed 11
+;; got postponed 20 dolor sit
+;; got postponed 20
+;; got postponed 24 amet
+;; got postponed 24
+;; got postponed 24
+;; got postponed 29 howgh
+;; got final 29 []
+;;=> nil
+--
+
+== License
+
+Copyright © 2013, 2015, Jozef Wagner.
+
+The use and distribution terms for this software are covered by the [Eclipse Public License 1.0](http://opensource.org/licenses/eclipse-1.0.php) which can be found in the file epl-v10.html at the root of this distribution.
+
+By using this software in any fashion, you are agreeing to be bound by the terms of this license.
+
+You must not remove this notice, or any other, from this software.

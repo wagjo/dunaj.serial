@@ -2,13 +2,14 @@
 
 Dunaj resource for serial communication
 
-JSSC is used for underlying serial communication.
-Plan is to replace JSSC with custom implementation, but with support
-only for linux.
+https://github.com/scream3r/java-simple-serial-connector[JSSC]
+is used for underlying serial communication.
+Plan is to replace JSSC with custom implementation,
+but with Linux support only.
 
 == Using with emulator
 
-Setting up emulator in linux that supports control signals:
+Setting up emulator in Linux that supports control signals:
 
 . Download http://sourceforge.net/projects/tty0tty/files/tty0tty-1.2.tgz/download[tty0tty]
 . Unpack, go into `module` directory
